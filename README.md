@@ -101,3 +101,21 @@ um lugar que ninguém procura quando pensa em "segredo".
 [github.com/jraalves](https://github.com/jraalves) ·
 [portfólio](https://jraalves.github.io/portfolio/) ·
 [LinkedIn](https://www.linkedin.com/in/joaorenatoalves-sre)
+
+## Pipeline de verificacao
+
+O portao roda offline: sem nuvem, sem registry, sem servico externo. A definicao esta
+no arquivo `.ci/ci.yml` deste repositorio e vale como pipeline para qualquer CI.
+Para transformar em GitHub Actions basta copiar para `.github/workflows/ci.yml`:
+
+```bash
+mkdir -p .github/workflows && cp .ci/ci.yml .github/workflows/ci.yml
+```
+
+O que cada portao verifica, com o resultado medido nesta maquina:
+
+| portao | o que verifica | resultado |
+|---|---|---|
+| `bash testa-hook.sh` | 12 casos de bloqueio/liberacao do hook, cada um num repositorio limpo | 12 corretos, 0 incorretos (22/11/2026) |
+| AST do `sanitizar_repo.py` | a ferramenta de sanitizacao nao pode quebrar por sintaxe | ok |
+| `gitleaks detect` | varredura de residuo depois da sanitizacao, com o `gitleaks.toml` do repo | roda na sua maquina: exige o binario |
