@@ -1,0 +1,6 @@
+# copie para ident.txt (gitignored) e preencha com os tokens do SEU caso.
+# sao strings que identificam o ambiente/empresa no historico a sanear.
+ACME
+acme-corp
+contoso
+cliente-x
