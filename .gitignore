@@ -1,0 +1,6 @@
+ident.txt
+__pycache__/
+*.pyc
+.pytest_cache/
+out/
+relatorio.json

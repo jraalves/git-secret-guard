@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Bloqueio local de segredo e lixo antes do commit — sem dependência externa obrigatória.
+# Instalar no repositório:  git config --local core.hooksPath .githooks
+# Regras de conteúdo ficam em tools/hook-patterns.tsv (rótulo <TAB> regex ERE).
+set -uo pipefail
+
+BLOCKED='(^|/)(\.env(\.[a-z0-9-]+)?|env\.txt|CREDENCIAIS?\.md|credentials\.(md|txt|json)|id_rsa.*|.*\.(pem|key|p12|pfx|sqlite3?|db|bak|dump)|venv/|\.venv/|node_modules/|__pycache__/|dist/|build/|site-packages/|analysis/)'
+ALLOWED='(^|/)\.env\.(example|sample|template|exemplo)$'
+# As proprias regras se citam: hook, tabela de padroes e o harness de regressao
+# contem fixtures que parecem credencial. Sem esta isencao o ferramenta bloqueia a
+# si mesma, e a primeira coisa que alguém faz num caso desses e desligar o hook.
+SELFTEST='(^|/)(\.githooks/|tools/(pre-commit|hook-patterns\.tsv|gitleaks\.toml|testa-hook\.sh|sanitizar_repo\.py))'
+PLACEHOLDER='(<[A-Z][A-Z0-9_:]*>|seu[_-]?segredo|your[_-]?secret|changeme|EXAMPLE|exemplo[_-]?ficticio|12\.345\.678/0001-00)'
+
+root=$(git rev-parse --show-toplevel)
+patterns_file="$root/tools/hook-patterns.tsv"
+[ -f "$patterns_file" ] || patterns_file="$(dirname "$0")/../hook-patterns.tsv"
+
+fail=0
+
+# 1) nomes de arquivo que não podem entrar
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  if printf '%s' "$f" | grep -qEi "$ALLOWED"; then
+    continue                       # .env.example e justamente o arquivo certo
+  fi
+  if printf '%s' "$f" | grep -qEi "$BLOCKED"; then
+    echo "BLOQUEADO (arquivo que não pode ser versionado): $f" >&2
+    fail=1
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+# 2) conteúdo do blob staged de cada arquivo (robusto: não depende de formato de diff)
+if [ -f "$patterns_file" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    printf '%s' "$f" | grep -qEi "$ALLOWED" && continue
+    content=$(git show ":$f" 2>/dev/null || true)
+    [ -z "$content" ] && continue
+    # .gitignore cita ".env.local", "kind-config.local.yaml": é exatamente a lista
+    # de arquivos locais que se quer ignorar. Travar isso faria as pessoas
+    # desativarem o hook inteiro, que é o pior resultado possivel.
+    printf '%s' "$f" | grep -qE "$SELFTEST" && continue
+    exempt_host=""; case "$(basename "$f")" in .gitignore|.gitattributes) exempt_host=1 ;; esac
+    while IFS=$'\t' read -r label regex; do
+      [ -z "${label// }" ] && continue
+      case "$label" in \#*) continue ;; esac
+      [ -n "${exempt_host:-}" ] && [ "$label" = "hostname interno" ] && continue
+      hits=$(printf '%s\n' "$content" | grep -Ei "$regex" | grep -Ev "$PLACEHOLDER" | head -3 || true)
+      if [ -n "$hits" ]; then
+        echo "BLOQUEADO ($label) em $f:" >&2
+        printf '%s\n' "$hits" | sed -E "s/(['\"])[^'\"]{4,}(['\"])/\1<oculto>\2/g" | sed 's/^/    /' >&2
+        fail=1
+      fi
+    done < "$patterns_file"
+  done < <(git diff --cached --name-only --diff-filter=ACM)
+else
+  echo "AVISO: tools/hook-patterns.tsv não encontrado; varredura de conteúdo pulada." >&2
+fi
+
+# 3) gitleaks, se instalado (cobre histórico e provedores conhecidos)
+if command -v gitleaks >/dev/null 2>&1; then
+  cfg="$root/tools/gitleaks.toml"
+  [ -f "$cfg" ] || cfg=""
+  if ! gitleaks protect --staged ${cfg:+--config "$cfg"}; then
+    echo "BLOQUEADO (gitleaks detectou segredo no staged)" >&2
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  cat >&2 <<'MSG'
+
+Commit interrompido. Nada foi gravado.
+Se o arquivo é legítimo mas traz exemplo, use placeholder óbvio (ex.: <JWT_SECRET>, "seu_token_aqui")
+ou renomeie para .env.example com valores vazios.
+Lembre: remover um segredo já commitado não apaga o blob do histórico — precisa de git filter-repo +
+gc + force push, e principalmente ROTACIONA a credencial, porque quem já copiou continua com a cópia.
+MSG
+  exit 1
+fi
+exit 0
