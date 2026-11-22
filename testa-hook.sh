@@ -37,7 +37,7 @@ run 5 BLOCK "IP interno em doc"                   topo.md        'O servidor fic
 '
 run 6 BLOCK "CNPJ real em doc"                    dados.md       'Empresa: 11.222.333/0001-81'
 run 7 BLOCK "hostname interno"                    rede.md        'Acesso por acme.local e homolog.app.local'
-run 8 BLOCK "chave de provedor"                   ci.yaml        "token: \${GH_PREFIX}_${GH_FAKE_SUFFIX}" 
+run 8 BLOCK "chave de provedor"                   ci.yaml        "token: ${GH_PREFIX}_${GH_FAKE_SUFFIX}" 
 run 9 PASS  "codigo limpo (segredo via ambiente)" b.py           'import os
 def get_secret():
     return os.environ["JWT_SECRET_KEY"]
